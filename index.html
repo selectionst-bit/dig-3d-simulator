@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>DIG-3D 災害医療訓練シミュレーター</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:'Helvetica Neue',Arial,sans-serif; background:#0e0e0e; color:#cccccc; overflow:hidden; user-select:none; }
+
+#top-bar {
+  position:fixed; top:0; left:0; right:0; height:44px;
+  background:rgba(0,0,0,0.95); border-bottom:1px solid #2a2a2a;
+  display:flex; align-items:center; padding:0 14px; z-index:200; gap:12px;
+}
+#top-bar .phase { font-size:11px; font-weight:bold; color:#999; letter-spacing:1px; }
+#top-bar .title { font-size:13px; font-weight:bold; color:#ffffff; letter-spacing:2px; }
+#top-bar .hint { margin-left:auto; font-size:10px; color:#444; }
+
+/* Patient counters */
+#counters {
+  position:fixed; top:54px; left:210px; z-index:200;
+  display:flex; gap:6px;
+}
+.badge {
+  padding:3px 10px; border-radius:10px; font-size:11px; font-weight:bold; cursor:default;
+}
+.badge-r { background:rgba(210,40,40,0.9);  color:#fff; }
+.badge-y { background:rgba(200,140,0,0.9);  color:#fff; }
+.badge-g { background:rgba(30,140,30,0.9);  color:#fff; }
+.badge-b { background:rgba(40,40,40,0.95);  border:1px solid #555; color:#aaa; }
+
+/* Left toolbar */
+#toolbar {
+  position:fixed; top:44px; left:0; width:206px; bottom:0;
+  background:rgba(8,8,8,0.97); border-right:1px solid #222;
+  overflow-y:auto; z-index:150;
+}
+#toolbar::-webkit-scrollbar { width:4px; }
+#toolbar::-webkit-scrollbar-thumb { background:#333; border-radius:2px; }
+
+.tsec { padding:10px; border-bottom:1px solid #1a1a1a; }
+.tsec h3 { font-size:9px; color:#484848; letter-spacing:1px; text-transform:uppercase; margin-bottom:6px; }
+.tbtn {
+  display:flex; align-items:center; width:100%; padding:6px 8px; margin-bottom:3px;
+  background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.07);
+  border-radius:3px; cursor:pointer; color:#888; font-size:11px; text-align:left;
+  transition:all 0.12s;
+}
+.tbtn:hover { background:rgba(255,255,255,0.08); color:#ccc; }
+.tbtn.active { background:rgba(255,255,255,0.12); border-color:rgba(255,255,255,0.4); color:#fff; }
+.tbtn.del-active { background:rgba(255,255,255,0.08); border-color:rgba(255,80,80,0.5); color:#ff6060; }
+.tico {
+  width:18px; height:18px; border-radius:2px; margin-right:7px; flex-shrink:0;
+  display:flex; align-items:center; justify-content:center; font-size:10px;
+}
+
+/* 3D canvas */
+#cv { position:fixed; top:44px; left:206px; right:268px; bottom:0; }
+#cv canvas { display:block; }
+
+/* Right panel */
+#panel {
+  position:fixed; top:44px; right:0; width:268px; bottom:0;
+  background:rgba(6,6,6,0.97); border-left:1px solid #222;
+  overflow-y:auto; z-index:150; padding:12px;
+}
+#panel::-webkit-scrollbar { width:4px; }
+#panel::-webkit-scrollbar-thumb { background:#333; }
+#panel h2 { font-size:12px; color:#ffffff; letter-spacing:3px; margin-bottom:2px; }
+#panel .sub { font-size:10px; color:#484848; margin-bottom:10px; }
+
+.ci { margin-bottom:8px; border:1px solid #222; border-radius:3px; overflow:hidden; }
+.ch {
+  display:flex; align-items:center; padding:7px 9px; cursor:pointer;
+  transition:background 0.12s;
+}
+.ch:hover { background:rgba(255,255,255,0.04); }
+.ch.done { background:rgba(255,255,255,0.07); border-left:2px solid #aaa; }
+.cchk {
+  width:15px; height:15px; border:2px solid #333; border-radius:2px;
+  margin-right:7px; flex-shrink:0; display:flex; align-items:center;
+  justify-content:center; font-size:9px; transition:all 0.15s;
+}
+.cchk.on { background:#888; border-color:#888; color:#fff; }
+.cltr { font-size:16px; font-weight:bold; width:24px; text-align:center; margin-right:7px; }
+.ctitle { font-size:11px; font-weight:bold; color:#ccc; }
+.cen { font-size:9px; color:#484848; }
+.cbody { padding:7px 9px; font-size:10px; color:#606060; line-height:1.6; background:rgba(255,255,255,0.015); }
+
+/* Notification */
+#notif {
+  position:fixed; top:56px; left:50%; transform:translateX(-50%);
+  background:rgba(200,200,200,0.95); color:#111; padding:5px 14px;
+  border-radius:16px; font-size:11px; font-weight:bold;
+  z-index:300; opacity:0; transition:opacity 0.25s; pointer-events:none;
+  white-space:nowrap;
+}
+#notif.show { opacity:1; }
+
+/* Bottom hints */
+#bhint { position:fixed; bottom:8px; left:216px; font-size:10px; color:#383838; z-index:200; }
+
+/* Rotation indicator */
+#rotind {
+  position:fixed; bottom:8px; right:278px; font-size:10px; color:#383838; z-index:200;
+}
+</style>
+</head>
+<body>
+
+<div id="top-bar">
+  <div class="phase" id="phase-lbl">PHASE 1 / 5</div>
+  <div class="title">DIG-3D 災害医療訓練シミュレーター</div>
+  <div style="font-size:10px;color:#666;border:1px solid #333;border-radius:10px;padding:2px 8px;margin-left:6px;">CSCATTT準拠</div>
+  <div class="hint">左クリック: 配置 | 右ドラッグ: 回転 | ホイール: ズーム | Alt+ドラッグ: 移動</div>
+</div>
+
+<div id="counters">
+  <div class="badge badge-r" id="cr">赤 0</div>
+  <div class="badge badge-y" id="cy">黄 0</div>
+  <div class="badge badge-g" id="cg">緑 0</div>
+  <div class="badge badge-b" id="cb">黒 0</div>
+</div>
+
+<!-- Toolbar -->
+<div id="toolbar">
+  <div class="tsec">
+    <h3>操作</h3>
+    <button class="tbtn active" id="btn-sel" onclick="setMode('sel')">
+      <div class="tico" style="background:#246">↖</div>選択
+    </button>
+    <button class="tbtn" id="btn-rot" onclick="setMode('rot')">
+      <div class="tico" style="background:#264">↻</div>回転（R）
+    </button>
+    <button class="tbtn" id="btn-del" onclick="setMode('del')">
+      <div class="tico" style="background:#622">✕</div>削除
+    </button>
+  </div>
+
+  <div class="tsec">
+    <h3>道路</h3>
+    <button class="tbtn" onclick="setObj('road_h')">
+      <div class="tico" style="background:#555">━</div>直線（横）
+    </button>
+    <button class="tbtn" onclick="setObj('road_v')">
+      <div class="tico" style="background:#555">┃</div>直線（縦）
+    </button>
+    <button class="tbtn" onclick="setObj('road_x')">
+      <div class="tico" style="background:#555">✛</div>交差点
+    </button>
+    <button class="tbtn" onclick="setObj('road_t')">
+      <div class="tico" style="background:#555">┳</div>T字路
+    </button>
+  </div>
+
+  <div class="tsec">
+    <h3>建物・地形</h3>
+    <button class="tbtn" onclick="setObj('bld_lg')">
+      <div class="tico" style="background:#aaa"></div>大型建物
+    </button>
+    <button class="tbtn" onclick="setObj('bld_sm')">
+      <div class="tico" style="background:#cc9"></div>小型建物
+    </button>
+    <button class="tbtn" onclick="setObj('tree')">
+      <div class="tico" style="background:#2a6a3a"></div>木
+    </button>
+    <button class="tbtn" onclick="setObj('rubble')">
+      <div class="tico" style="background:#886655">⬛</div>がれき
+    </button>
+  </div>
+
+  <div class="tsec">
+    <h3>車両</h3>
+    <button class="tbtn" onclick="setObj('car')">
+      <div class="tico" style="background:#3366cc"></div>乗用車
+    </button>
+    <button class="tbtn" onclick="setObj('truck')">
+      <div class="tico" style="background:#885533"></div>トラック
+    </button>
+    <button class="tbtn" onclick="setObj('bus')">
+      <div class="tico" style="background:#cc8800"></div>バス
+    </button>
+    <button class="tbtn" onclick="setObj('amb')">
+      <div class="tico" style="background:#fff;border:1px solid #f44"></div>救急車
+    </button>
+    <button class="tbtn" onclick="setObj('fire')">
+      <div class="tico" style="background:#cc2222"></div>消防車
+    </button>
+    <button class="tbtn" onclick="setObj('police')">
+      <div class="tico" style="background:#224488"></div>パトカー
+    </button>
+  </div>
+
+  <div class="tsec">
+    <h3>患者（トリアージ）</h3>
+    <button class="tbtn" onclick="setObj('pt_r')">
+      <div class="tico" style="background:#dd2222"></div>重症（赤）
+    </button>
+    <button class="tbtn" onclick="setObj('pt_y')">
+      <div class="tico" style="background:#dd9900"></div>中等症（黄）
+    </button>
+    <button class="tbtn" onclick="setObj('pt_g')">
+      <div class="tico" style="background:#22aa22"></div>軽症（緑）
+    </button>
+    <button class="tbtn" onclick="setObj('pt_b')">
+      <div class="tico" style="background:#333;border:1px solid #666"></div>死亡（黒）
+    </button>
+  </div>
+
+  <div class="tsec">
+    <h3>指揮・エリア</h3>
+    <button class="tbtn" onclick="setObj('cp')">
+      <div class="tico" style="background:#ffee00">⛺</div>指揮所 CP
+    </button>
+    <button class="tbtn" onclick="setObj('triage_zone')">
+      <div class="tico" style="background:#ff8800;opacity:.8"></div>トリアージゾーン
+    </button>
+    <button class="tbtn" onclick="setObj('zone_r')">
+      <div class="tico" style="background:#dd2222;opacity:.7"></div>赤エリア
+    </button>
+    <button class="tbtn" onclick="setObj('zone_y')">
+      <div class="tico" style="background:#dd9900;opacity:.7"></div>黄エリア
+    </button>
+    <button class="tbtn" onclick="setObj('zone_g')">
+      <div class="tico" style="background:#22aa22;opacity:.7"></div>緑エリア
+    </button>
+  </div>
+
+  <div class="tsec">
+    <h3>シーンプリセット</h3>
+    <button class="tbtn" onclick="loadPreset('traffic')" style="color:#ffcc66">
+      <div class="tico" style="background:#443">🚗</div>交通事故
+    </button>
+    <button class="tbtn" onclick="loadPreset('collapse')" style="color:#ffcc66">
+      <div class="tico" style="background:#443">🏚</div>建物崩壊
+    </button>
+    <button class="tbtn" onclick="loadPreset('clear')" style="color:#ff8888">
+      <div class="tico" style="background:#422">🗑</div>全クリア
+    </button>
+  </div>
+</div>
+
+<!-- 3D Scene -->
+<div id="cv"></div>
+
+<!-- CSCATTT Panel -->
+<div id="panel">
+  <h2>災害医療チェックリスト</h2>
+  <div class="sub">CSCATTT準拠 — 7原則 — クリックでチェック</div>
+  <div id="plist"></div>
+</div>
+
+<div id="notif"></div>
+<div id="bhint">左クリック: オブジェ配置 | R: 配置オブジェを回転</div>
+<div id="rotind" id="rot-ind"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// ── CSCATTT DATA ──────────────────────────────────────────
+const CDATA = [
+  { l:'C', col:'#ff6b6b', t:'指揮・統制', e:'COMMAND & CONTROL',
+    b:'現地指揮所（CP）の設置と現地指揮者の指名。指揮命令系統（ICS）確立。指揮・統制ラインを全スタッフに周知する。' },
+  { l:'S', col:'#ffd93d', t:'安全', e:'SAFETY',
+    b:'自己・現場・傷病者の安全（3S）確認。二次災害防止。CSCATTTの中で最も優先される原則。' },
+  { l:'C', col:'#74c69d', t:'通信', e:'COMMUNICATION',
+    b:'DMAT本部・都道府県病院支援本部との通信確立。Medical Control（MC）への報告体制を整備する。' },
+  { l:'A', col:'#4d96ff', t:'評価', e:'ASSESSMENT',
+    b:'METHANE報告の実施: Major Incident / Exact location / Type / Hazards / Access / Number / Emergency services。' },
+  { l:'T', col:'#ff6b6b', t:'一次トリアージ', e:'TRIAGE',
+    b:'START法による一次トリアージ。赤（最優先）・黄（準緊急）・緑（軽症）・黒（死亡/救命困難）の分類。' },
+  { l:'T', col:'#ffd93d', t:'治療', e:'TREATMENT',
+    b:'赤・黄・緑エリアの設営。二次トリアージとバイタル管理。DMAT医師による処置・安定化。' },
+  { l:'T', col:'#74c69d', t:'搬送', e:'TRANSPORT',
+    b:'患者搬送の優先順位と搬送先病院調整。広域医療搬送の検討。搬送記録の徹底管理。' }
+];
+
+const plist = document.getElementById('plist');
+CDATA.forEach((d, i) => {
+  plist.insertAdjacentHTML('beforeend', `
+    <div class="ci">
+      <div class="ch" id="ch${i}" onclick="toggleC(${i})">
+        <div class="cchk" id="ck${i}"></div>
+        <div class="cltr" style="color:${d.col}">${d.l}</div>
+        <div><div class="ctitle">${d.t}</div><div class="cen">${d.e}</div></div>
+      </div>
+      <div class="cbody">${d.b}</div>
+    </div>`);
+});
+
+function toggleC(i) {
+  const ck = document.getElementById('ck'+i), ch = document.getElementById('ch'+i);
+  const on = ck.classList.toggle('on');
+  ck.textContent = on ? '✓' : '';
+  ch.classList.toggle('done', on);
+}
+
+// ── THREE.JS SETUP ────────────────────────────────────────
+const cv = document.getElementById('cv');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+cv.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x111111);
+scene.fog = new THREE.FogExp2(0x111111, 0.012);
+
+const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 500);
+camera.position.set(0, 28, 32);
+camera.lookAt(0, 0, 0);
+
+// Lights
+scene.add(new THREE.AmbientLight(0xffffff, 0.45));
+const sun = new THREE.DirectionalLight(0xfff8ee, 0.9);
+sun.position.set(25, 45, 30);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left:-60, right:60, top:60, bottom:-60, near:0.1, far:200 });
+scene.add(sun);
+scene.add(new THREE.HemisphereLight(0x224422, 0x111108, 0.3));
+
+// Ground
+const gnd = new THREE.Mesh(
+  new THREE.PlaneGeometry(300, 300),
+  new THREE.MeshLambertMaterial({ color: 0x1a1a1a })
+);
+gnd.rotation.x = -Math.PI/2;
+gnd.receiveShadow = true;
+scene.add(gnd);
+
+// Grid
+const grid = new THREE.GridHelper(120, 60, 0x2a2a2a, 0x1e1e1e);
+grid.position.y = 0.02;
+scene.add(grid);
+
+// Invisible ray plane
+const rayPlane = new THREE.Mesh(
+  new THREE.PlaneGeometry(300, 300),
+  new THREE.MeshBasicMaterial({ visible: false, side: THREE.DoubleSide })
+);
+rayPlane.rotation.x = -Math.PI/2;
+scene.add(rayPlane);
+
+// ── STATE ─────────────────────────────────────────────────
+const GS = 2; // grid size
+let mode = 'sel';       // sel / rot / del / place
+let objType = null;
+let objRot = 0;         // rotation steps (90° each)
+let placed = [];
+let pCnt = { r:0, y:0, g:0, b:0 };
+let pIdx = 0;
+let isDrag = false, dragBtn = -1, dragStart = {x:0,y:0}, dragDist = 0;
+let sph = { th: 0.4, ph: 0.75, r: 42 };
+let tgt = new THREE.Vector3(0, 0, 0);
+const raycaster = new THREE.Raycaster();
+const mouse2 = new THREE.Vector2();
+
+// ── HELPERS ───────────────────────────────────────────────
+function snap(v) { return Math.round(v / GS) * GS; }
+function updateCamera() {
+  camera.position.set(
+    tgt.x + sph.r * Math.sin(sph.ph) * Math.sin(sph.th),
+    tgt.y + sph.r * Math.cos(sph.ph),
+    tgt.z + sph.r * Math.sin(sph.ph) * Math.cos(sph.th)
+  );
+  camera.lookAt(tgt);
+}
+updateCamera();
+
+function getHit(e) {
+  const r = cv.getBoundingClientRect();
+  mouse2.set(
+    ((e.clientX - r.left) / r.width) * 2 - 1,
+    -((e.clientY - r.top) / r.height) * 2 + 1
+  );
+  raycaster.setFromCamera(mouse2, camera);
+  const h = raycaster.intersectObject(rayPlane);
+  return h.length ? { x: snap(h[0].point.x), z: snap(h[0].point.z) } : null;
+}
+
+let ntTimer;
+function notify(msg) {
+  const el = document.getElementById('notif');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(ntTimer);
+  ntTimer = setTimeout(() => el.classList.remove('show'), 1800);
+}
+
+function updateCounters() {
+  document.getElementById('cr').textContent = '赤 ' + pCnt.r;
+  document.getElementById('cy').textContent = '黄 ' + pCnt.y;
+  document.getElementById('cg').textContent = '緑 ' + pCnt.g;
+  document.getElementById('cb').textContent = '黒 ' + pCnt.b;
+}
+
+// ── OBJECT FACTORY ────────────────────────────────────────
+function makeMesh(geo, col, cast=true, recv=true) {
+  const m = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color: col }));
+  m.castShadow = cast;
+  m.receiveShadow = recv;
+  return m;
+}
+
+function makeGroup(type, rotStep) {
+  const g = new THREE.Group();
+  g.userData = { type, removable: true };
+
+  const t = type;
+
+  // ─ ROADS ─
+  if (t === 'road_h' || t === 'road_v') {
+    const road = makeMesh(new THREE.BoxGeometry(GS*2, 0.06, GS*2), 0x4a4a4a, false, true);
+    g.add(road);
+    // Lane markings
+    const lh = t === 'road_h';
+    const line = makeMesh(new THREE.BoxGeometry(lh ? GS*1.8 : 0.08, 0.08, lh ? 0.08 : GS*1.8), 0xffee00, false, false);
+    line.position.y = 0.04;
+    g.add(line);
+    // Side lines
+    [-1, 1].forEach(s => {
+      const side = makeMesh(new THREE.BoxGeometry(lh ? GS*2 : 0.06, 0.07, lh ? 0.06 : GS*2), 0xffffff, false, false);
+      side.position.set(lh ? 0 : s*(GS-0.2), 0.04, lh ? s*(GS-0.2) : 0);
+      g.add(side);
+    });
+  }
+  else if (t === 'road_x') {
+    const road = makeMesh(new THREE.BoxGeometry(GS*2, 0.06, GS*2), 0x4a4a4a, false, true);
+    g.add(road);
+    // Crosswalk dots
+    [-0.4, 0, 0.4].forEach(ox => [-0.8, 0.8].forEach(oz => {
+      const d = makeMesh(new THREE.BoxGeometry(0.15, 0.08, 0.35), 0xffffff, false, false);
+      d.position.set(ox, 0.04, oz);
+      g.add(d);
+    }));
+  }
+  else if (t === 'road_t') {
+    const road = makeMesh(new THREE.BoxGeometry(GS*2, 0.06, GS*2), 0x4a4a4a, false, true);
+    g.add(road);
+    const stop = makeMesh(new THREE.BoxGeometry(GS*1.8, 0.08, 0.06), 0xffffff, false, false);
+    stop.position.set(0, 0.04, GS-0.15);
+    g.add(stop);
+  }
+
+  // ─ BUILDINGS ─
+  else if (t === 'bld_lg') {
+    const h = 3 + Math.random()*3;
+    const b = makeMesh(new THREE.BoxGeometry(GS*1.7, h, GS*1.7), 0xcccccc);
+    b.position.y = h/2;
+    g.add(b);
+    // Windows
+    const wh = 0.28, ww = 0.2;
+    for (let fl=0; fl<Math.floor(h/0.9); fl++) {
+      for (let col=-1; col<=1; col++) {
+        const win = makeMesh(new THREE.BoxGeometry(ww, wh, 0.05), 0x7799bb, false, false);
+        win.position.set(col*0.55, 0.5+fl*0.9, GS*0.85+0.01);
+        win.material.emissive = new THREE.Color(0x112233);
+        win.material.emissiveIntensity = 0.4;
+        g.add(win);
+      }
+    }
+  }
+  else if (t === 'bld_sm') {
+    const h = 1.4 + Math.random()*0.8;
+    const b = makeMesh(new THREE.BoxGeometry(GS*1.3, h, GS*1.3), 0xddbb99);
+    b.position.y = h/2;
+    g.add(b);
+    const roof = makeMesh(new THREE.ConeGeometry(GS*0.95, 0.9, 4), 0x884433);
+    roof.position.y = h + 0.45;
+    roof.rotation.y = Math.PI/4;
+    g.add(roof);
+  }
+  else if (t === 'tree') {
+    const trunk = makeMesh(new THREE.CylinderGeometry(0.13, 0.17, 1.1, 8), 0x7a5230);
+    trunk.position.y = 0.55;
+    g.add(trunk);
+    [0, 0.9, 1.7].forEach((cy, i) => {
+      const cone = makeMesh(new THREE.ConeGeometry(0.95-i*0.2, 1.6-i*0.3, 8), i===1?0x3a7a50:0x2d6040);
+      cone.position.y = 1.4 + cy;
+      g.add(cone);
+    });
+  }
+  else if (t === 'rubble') {
+    [[0,0.2,0,1.2,0.4,1.2,0x8a7060],[-0.5,0.15,0.3,0.8,0.3,0.9,0x6a5040],[0.4,0.1,-0.3,0.9,0.25,0.7,0x9a8070]].forEach(([x,y,z,w,h,d,col])=>{
+      const r = makeMesh(new THREE.BoxGeometry(w,h,d), col);
+      r.position.set(x,y,z);
+      r.rotation.set(Math.random()*0.3,Math.random()*Math.PI,Math.random()*0.3);
+      g.add(r);
+    });
+  }
+
+  // ─ VEHICLES ─
+  else if (['car','truck','bus','amb','fire','police'].includes(t)) {
+    const specs = {
+      car:   { bw:1.3, bh:0.55, bd:0.55, ch:0.38, col:0x3366cc, wr:0.14 },
+      truck: { bw:2.0, bh:0.65, bd:0.7, ch:0.5, col:0x885533, wr:0.18 },
+      bus:   { bw:2.4, bh:0.8, bd:0.75, ch:0.75, col:0xcc8800, wr:0.18 },
+      amb:   { bw:1.6, bh:0.65, bd:0.65, ch:0.55, col:0xffffff, wr:0.15 },
+      fire:  { bw:2.0, bh:0.7, bd:0.7, ch:0.55, col:0xcc1111, wr:0.18 },
+      police:{ bw:1.3, bh:0.55, bd:0.55, ch:0.38, col:0x1a3a7a, wr:0.14 },
+    };
+    const s = specs[t];
+    const body = makeMesh(new THREE.BoxGeometry(s.bw, s.bh, s.bd), s.col);
+    body.position.y = s.bh/2 + 0.1;
+    g.add(body);
+    const cabin = makeMesh(new THREE.BoxGeometry(s.bw*(t==='bus'?0.98:0.6), s.ch, s.bd*0.88), s.col);
+    cabin.position.set(t==='bus'?0:s.bw*0.1, s.bh+s.ch/2+0.1, 0);
+    g.add(cabin);
+    // Windshield
+    const ws = makeMesh(new THREE.BoxGeometry(s.bw*(t==='bus'?0.05:0.52), s.ch*0.7, 0.04), 0x88aacc, false, false);
+    ws.position.set(t==='bus'?-(s.bw*0.5-0.05):(s.bw*0.32), s.bh+s.ch/2+0.1, s.bd*0.44);
+    ws.material.transparent=true; ws.material.opacity=0.7;
+    g.add(ws);
+    // Wheels
+    const wg = new THREE.CylinderGeometry(s.wr, s.wr, 0.1, 12);
+    const wm = new THREE.MeshLambertMaterial({ color:0x222222 });
+    [[-(s.bw/2-0.1),0.1,s.bd/2],[s.bw/2-0.1,0.1,s.bd/2],[-(s.bw/2-0.1),0.1,-s.bd/2],[s.bw/2-0.1,0.1,-s.bd/2]].forEach(([wx,wy,wz])=>{
+      const w = new THREE.Mesh(wg, wm); w.position.set(wx,wy,wz); w.rotation.x=Math.PI/2; w.castShadow=true; g.add(w);
+    });
+    // Special markings
+    if (t === 'amb') {
+      [true,false].forEach(h => {
+        const cr = makeMesh(new THREE.BoxGeometry(h?0.45:0.08, 0.04, h?0.08:0.45), 0xff0000, false, false);
+        cr.position.set(0, s.bh+0.1, 0);
+        g.add(cr);
+      });
+    }
+    if (t === 'fire') {
+      const ladder = makeMesh(new THREE.BoxGeometry(1.6, 0.08, 0.12), 0xaaaaaa);
+      ladder.position.set(0, s.bh+s.ch+0.05, 0);
+      g.add(ladder);
+    }
+    if (t === 'police') {
+      const light = makeMesh(new THREE.BoxGeometry(0.4, 0.12, 0.15), 0x224499, false, false);
+      light.position.set(0, s.bh+s.ch+0.12, 0);
+      light.material.emissive=new THREE.Color(0x0033ff); light.material.emissiveIntensity=0.8;
+      g.add(light);
+    }
+  }
+
+  // ─ PATIENTS ─
+  else if (t.startsWith('pt_')) {
+    const colMap = { pt_r:0xdd2222, pt_y:0xdd9900, pt_g:0x22aa22, pt_b:0x2a2a2a };
+    const body = makeMesh(new THREE.BoxGeometry(0.28, 0.18, 0.68), 0xf0b080);
+    body.position.y = 0.09;
+    g.add(body);
+    const head = makeMesh(new THREE.SphereGeometry(0.14, 8, 6), 0xf0b080);
+    head.position.set(0, 0.27, 0.38);
+    g.add(head);
+    const tag = makeMesh(new THREE.BoxGeometry(0.32, 0.32, 0.04), colMap[t], false, false);
+    tag.position.set(0.28, 0.28, 0);
+    g.add(tag);
+    pIdx++;
+    const key = t.split('_')[1];
+    pCnt[key]++;
+    updateCounters();
+    g.userData.ptKey = key;
+    g.userData.label = 'P-' + String(pIdx).padStart(2,'0');
+  }
+
+  // ─ COMMAND / ZONES ─
+  else if (t === 'cp') {
+    const base = makeMesh(new THREE.BoxGeometry(GS*1.6, 0.1, GS*1.6), 0x666680, false, true);
+    base.position.y = 0.05;
+    g.add(base);
+    const tent = makeMesh(new THREE.ConeGeometry(GS*0.9, 1.6, 4), 0xffee00);
+    tent.position.y = 1.3; tent.rotation.y = Math.PI/4;
+    g.add(tent);
+    const pole = makeMesh(new THREE.CylinderGeometry(0.04,0.04,3.2,8), 0xaaaaaa);
+    pole.position.set(GS*0.75, 1.6, 0);
+    g.add(pole);
+    const flag = makeMesh(new THREE.BoxGeometry(0.55, 0.32, 0.03), 0xdd0000, false, false);
+    flag.position.set(GS*0.75+0.28, 2.96, 0);
+    g.add(flag);
+  }
+  else if (['triage_zone','zone_r','zone_y','zone_g'].includes(t)) {
+    const colM = { triage_zone:0xff8800, zone_r:0xdd2222, zone_y:0xdd9900, zone_g:0x22aa22 };
+    const area = makeMesh(new THREE.BoxGeometry(GS*2, 0.04, GS*2), colM[t], false, true);
+    area.position.y = 0.02;
+    area.material.transparent = true; area.material.opacity = 0.45;
+    g.add(area);
+    // Border
+    const edges = new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.BoxGeometry(GS*2, 0.04, GS*2)),
+      new THREE.LineBasicMaterial({ color: colM[t] })
+    );
+    edges.position.y = 0.02;
+    g.add(edges);
+  }
+
+  g.rotation.y = rotStep * (Math.PI/2);
+  return g;
+}
+
+// ── PLACE / DELETE ────────────────────────────────────────
+function place(x, z) {
+  const g = makeGroup(objType, objRot);
+  g.position.set(x, 0, z);
+  scene.add(g);
+  placed.push(g);
+  notify('✓ ' + labelOf(objType) + ' を配置しました');
+}
+
+function deleteAt(x, z) {
+  for (let i = placed.length-1; i >= 0; i--) {
+    const o = placed[i];
+    if (Math.abs(o.position.x-x) < GS && Math.abs(o.position.z-z) < GS) {
+      if (o.userData.ptKey) { pCnt[o.userData.ptKey]--; updateCounters(); }
+      scene.remove(o);
+      placed.splice(i, 1);
+      notify('削除しました');
+      return;
+    }
+  }
+}
+
+function labelOf(t) {
+  const m = {
+    road_h:'直線道路(横)',road_v:'直線道路(縦)',road_x:'交差点',road_t:'T字路',
+    bld_lg:'大型建物',bld_sm:'小型建物',tree:'木',rubble:'がれき',
+    car:'乗用車',truck:'トラック',bus:'バス',amb:'救急車',fire:'消防車',police:'パトカー',
+    pt_r:'重症患者(赤)',pt_y:'中等症患者(黄)',pt_g:'軽症患者(緑)',pt_b:'死亡(黒)',
+    cp:'指揮所',triage_zone:'トリアージゾーン',zone_r:'赤エリア',zone_y:'黄エリア',zone_g:'緑エリア'
+  };
+  return m[t] || t;
+}
+
+// ── TOOLBAR CONTROLS ─────────────────────────────────────
+function setMode(m) {
+  mode = m; objType = null;
+  document.querySelectorAll('.tbtn').forEach(b => b.classList.remove('active','del-active'));
+  if (m==='sel') document.getElementById('btn-sel').classList.add('active');
+  if (m==='rot') document.getElementById('btn-rot').classList.add('active');
+  if (m==='del') document.getElementById('btn-del').classList.add('del-active');
+}
+
+function setObj(t) {
+  objType = t; mode = 'place';
+  document.querySelectorAll('.tbtn').forEach(b => b.classList.remove('active','del-active'));
+  notify('配置: ' + labelOf(t) + ' (Rで回転)');
+}
+
+// ── EVENTS ────────────────────────────────────────────────
+renderer.domElement.addEventListener('contextmenu', e => e.preventDefault());
+
+renderer.domElement.addEventListener('mousedown', e => {
+  isDrag = true; dragBtn = e.button;
+  dragStart = { x:e.clientX, y:e.clientY };
+  dragDist = 0;
+});
+
+window.addEventListener('mousemove', e => {
+  if (!isDrag) return;
+  const dx = e.clientX - dragStart.x, dy = e.clientY - dragStart.y;
+  dragDist = Math.hypot(dx, dy);
+  if (dragDist < 3) return;
+  if (dragBtn===2 || (dragBtn===0 && e.ctrlKey)) {
+    sph.th -= dx*0.008; sph.ph = Math.max(0.05, Math.min(1.48, sph.ph+dy*0.008));
+    dragStart = {x:e.clientX, y:e.clientY};
+  } else if (dragBtn===1 || (dragBtn===0 && e.altKey)) {
+    const sp = sph.r*0.0008;
+    tgt.x -= dx*sp*Math.cos(sph.th); tgt.z -= dx*sp*Math.sin(sph.th);
+    tgt.x += dy*sp*Math.sin(sph.th); tgt.z -= dy*sp*Math.cos(sph.th);
+    dragStart = {x:e.clientX, y:e.clientY};
+  }
+  updateCamera();
+});
+
+window.addEventListener('mouseup', () => { setTimeout(()=>{ isDrag=false; }, 10); dragBtn=-1; });
+
+renderer.domElement.addEventListener('wheel', e => {
+  sph.r = Math.max(4, Math.min(120, sph.r + e.deltaY*0.04));
+  updateCamera();
+  e.preventDefault();
+}, { passive:false });
+
+renderer.domElement.addEventListener('click', e => {
+  if (dragDist > 4) return;
+  const pos = getHit(e);
+  if (!pos) return;
+  if (mode==='place' && objType) place(pos.x, pos.z);
+  else if (mode==='del') deleteAt(pos.x, pos.z);
+});
+
+window.addEventListener('keydown', e => {
+  if (e.key==='r' || e.key==='R') {
+    objRot = (objRot+1)%4;
+    notify('回転: ' + objRot*90 + '°');
+  }
+  if (e.key==='Escape') setMode('sel');
+  if (e.key==='Delete' || e.key==='Backspace') setMode('del');
+});
+
+// ── RESIZE ────────────────────────────────────────────────
+function resize() {
+  const w = cv.clientWidth, h = cv.clientHeight;
+  renderer.setSize(w, h);
+  camera.aspect = w/h;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ── PRESETS ───────────────────────────────────────────────
+function loadPreset(name) {
+  // clear
+  placed.forEach(o => scene.remove(o));
+  placed = []; pCnt={r:0,y:0,g:0,b:0}; pIdx=0; updateCounters();
+  if (name==='clear') { notify('シーンをクリアしました'); return; }
+
+  function add(type, x, z, rot=0) {
+    const g = makeGroup(type, rot);
+    g.position.set(x, 0, z);
+    scene.add(g);
+    placed.push(g);
+    return g;
+  }
+
+  if (name==='traffic') {
+    // Road corridor
+    for (let i=-6; i<=6; i++) add('road_h', i*GS*2, 0);
+    // Sidewalk trees
+    for (let i=-5; i<=5; i+=2) { add('tree', i*GS*2, 6); add('tree', i*GS*2, -6); }
+    // Buildings flanking
+    [[-8,5],[8,5],[-8,-5],[8,-5],[-12,4],[12,4]].forEach(([x,z])=>add('bld_sm',x,z));
+    // Crashed vehicles
+    const c1=add('car',-4,0.6,1); c1.rotation.z=0.18;
+    const c2=add('car',-2.5,-0.5,0); c2.rotation.z=-0.1; c2.rotation.y=Math.PI*0.85;
+    const tr=add('truck',2,0.3,1);
+    // Emergency
+    add('amb',-8,-3,0); add('fire',-10,-3,0); add('police',6,-3,2);
+    // Patients
+    [['pt_r',-3,2],['pt_r',-5,-1.5],['pt_r',1,-1],
+     ['pt_y',-1,2.5],['pt_y',0,-2],['pt_y',3,1.5],['pt_y',-6,2],
+     ['pt_g',-4,3.5],['pt_g',1.5,3],['pt_g',2,-2.5],['pt_g',4,2],
+     ['pt_b',-2,-3],['pt_b',0.5,1]].forEach(([t,x,z])=>add(t,x,z));
+    // Command post
+    add('cp',-12,-1);
+    // Zones
+    add('triage_zone',-10,2); add('zone_r',-8,2); add('zone_y',-6,2); add('zone_g',-4,-4);
+    notify('交通事故シーンを読み込みました');
+
+  } else if (name==='collapse') {
+    // Peripheral roads
+    for (let i=-5; i<=5; i++) { add('road_h', i*GS*2, -10); add('road_h', i*GS*2, 10); }
+    for (let i=-4; i<=4; i++) { add('road_v', -10, i*GS*2); add('road_v', 10, i*GS*2); }
+    // Intersections
+    [[-10,-10],[10,-10],[-10,10],[10,10]].forEach(([x,z])=>add('road_x',x,z));
+    // Collapsed building (tilted)
+    const col1 = makeGroup('bld_lg',0);
+    col1.rotation.z=0.4; col1.rotation.x=0.15; col1.position.set(0,0,0);
+    scene.add(col1); placed.push(col1);
+    // Rubble
+    [[-2,2],[2,-1],[-1,-2],[3,2],[1.5,3],[-3,-1]].forEach(([x,z])=>add('rubble',x,z));
+    // Surrounding buildings
+    [[-6,-4],[6,-4],[-6,4],[6,4],[0,-7],[0,7],[-7,0],[7,0]].forEach(([x,z])=>add('bld_sm',x,z));
+    [[-8,-7],[8,-7],[-8,7],[8,7]].forEach(([x,z])=>add('bld_lg',x,z));
+    // Trees
+    [[-12,-8],[12,-8],[-12,8],[12,8],[-5,-12],[5,-12]].forEach(([x,z])=>add('tree',x,z));
+    // Emergency vehicles
+    add('amb',-13,-8); add('amb',-13,-6); add('fire',-13,-10); add('fire',13,-10); add('police',-13,-4);
+    // Patients
+    [['pt_r',2,1],['pt_r',-1,-2],['pt_r',3,-2],['pt_r',-3,1],
+     ['pt_y',4,3],['pt_y',-4,4],['pt_y',5,-1],['pt_y',1,5],['pt_y',-2,5],
+     ['pt_g',7,2],['pt_g',-6,-3],['pt_g',2,7],['pt_g',-5,6],['pt_g',6,-5],
+     ['pt_b',0.5,2],['pt_b',-2,0]].forEach(([t,x,z])=>add(t,x,z));
+    // Command
+    add('cp',-13,-2);
+    add('triage_zone',-13,2); add('zone_r',-11,2); add('zone_y',-9,2); add('zone_g',-11,5);
+    notify('建物崩壊シーンを読み込みました');
+  }
+}
+
+// ── ANIMATION LOOP ────────────────────────────────────────
+function animate() {
+  requestAnimationFrame(animate);
+  renderer.render(scene, camera);
+}
+animate();
+
+// Load traffic accident preset on start
+setTimeout(() => loadPreset('traffic'), 150);
+
+// Save user memory
+</script>
+</body>
+</html>
